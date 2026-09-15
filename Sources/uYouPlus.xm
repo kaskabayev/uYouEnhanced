@@ -935,8 +935,12 @@ YTMainAppControlsOverlayView *controlsOverlayView;
 %end
 
 // Hide Shorts Cells - Modern YTUnShorts v1.3.1 (PoomSmart)
+static BOOL shouldHideShorts() {
+    return IS_ENABLED(kHideShortsInFeeds) || [[NSUserDefaults standardUserDefaults] boolForKey:@"hideShortsCells"];
+}
+
 static NSMutableArray <YTIItemSectionRenderer *> *filteredShortsArray(NSArray <YTIItemSectionRenderer *> *array) {
-    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"hideShortsCells"] || !array) {
+    if (!shouldHideShorts() || !array) {
         return [array mutableCopy];
     }
     NSMutableArray <YTIItemSectionRenderer *> *newArray = [array mutableCopy];
@@ -974,7 +978,7 @@ static NSMutableArray <YTIItemSectionRenderer *> *filteredShortsArray(NSArray <Y
 
 %hook YTInnerTubeCollectionViewController
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"hideShortsCells"]) {
+    if (shouldHideShorts()) {
         NSMutableArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
         if (sectionRenderers && [sectionRenderers isKindOfClass:[NSArray class]]) {
             [self setValue:filteredShortsArray(sectionRenderers) forKey:@"_sectionRenderers"];
@@ -984,7 +988,7 @@ static NSMutableArray <YTIItemSectionRenderer *> *filteredShortsArray(NSArray <Y
 }
 
 - (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"hideShortsCells"] && array) {
+    if (shouldHideShorts() && array) {
         %orig(filteredShortsArray(array));
     } else {
         %orig;
