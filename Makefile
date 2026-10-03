@@ -40,9 +40,8 @@ endif
 $(TWEAK_NAME)_INJECT_DYLIBS = \
 	Tweaks/uYou/Library/MobileSubstrate/DynamicLibraries/uYou.dylib \
 	$(THEOS_OBJ_DIR)/YouGroupSettings.dylib \
-	$(THEOS_OBJ_DIR)/YouPiP.dylib \
-	$(THEOS_OBJ_DIR)/YouQuality.dylib \
-	$(THEOS_OBJ_DIR)/YouSpeed.dylib
+	$(THEOS_OBJ_DIR)/YTVideoOverlay.dylib \
+	$(THEOS_OBJ_DIR)/YouPiP.dylib
 
 ifeq ($(SPONSORBLOCK_ENABLED),1)
 $(TWEAK_NAME)_INJECT_DYLIBS += $(THEOS_OBJ_DIR)/iSponsorBlock.dylib
@@ -70,7 +69,7 @@ UYOU_BUNDLE = $(UYOU_PATH)/Library/Application\ Support/uYouBundle.bundle
 include $(THEOS)/makefiles/common.mk
 
 ifneq ($(JAILBROKEN),1)
-SUBPROJECTS += Tweaks/Alderis Tweaks/YouGroupSettings Tweaks/YouPiP Tweaks/YouQuality Tweaks/YouSpeed
+SUBPROJECTS += Tweaks/Alderis Tweaks/YouGroupSettings Tweaks/YTVideoOverlay Tweaks/YouPiP
 ifeq ($(SPONSORBLOCK_ENABLED),1)
 SUBPROJECTS += Tweaks/iSponsorBlock
 endif
