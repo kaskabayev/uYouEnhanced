@@ -934,65 +934,86 @@ YTMainAppControlsOverlayView *controlsOverlayView;
 - (BOOL)enablePlayerBarForVerticalVideoWhenControlsHiddenInFullscreen { return YES; }
 %end
 
-// Hide Shorts Cells - Modern YTUnShorts v1.3.1 (PoomSmart)
-static BOOL shouldHideShorts() {
+// Hide Shorts Cells - Optimized Zero-Lag Filter
+static const void *kShortsKeepKey = &kShortsKeepKey;
+
+static BOOL shouldHideShorts(void) {
     return IS_ENABLED(kHideShortsInFeeds) || [[NSUserDefaults standardUserDefaults] boolForKey:@"hideShortsCells"];
 }
 
-static NSMutableArray <YTIItemSectionRenderer *> *filteredShortsArray(NSArray <YTIItemSectionRenderer *> *array) {
-    if (!shouldHideShorts() || !array) {
-        return [array mutableCopy];
-    }
-    NSMutableArray <YTIItemSectionRenderer *> *newArray = [array mutableCopy];
-    NSIndexSet *removeIndexes = [newArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionRenderer *sectionRenderer, NSUInteger idx, BOOL *stop) {
-        if ([sectionRenderer isKindOfClass:%c(YTIShelfRenderer)]) {
-            YTIShelfSupportedRenderers *content = ((YTIShelfRenderer *)sectionRenderer).content;
-            YTIHorizontalListRenderer *horizontalListRenderer = content.horizontalListRenderer;
-            NSMutableArray <YTIHorizontalListSupportedRenderers *> *itemsArray = horizontalListRenderer.itemsArray;
-            NSIndexSet *removeItemsArrayIndexes = [itemsArray indexesOfObjectsPassingTest:^BOOL(YTIHorizontalListSupportedRenderers *horizontalListSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
-                YTIElementRenderer *elementRenderer = horizontalListSupportedRenderers.elementRenderer;
-                NSString *description = [elementRenderer description];
-                BOOL hasShorts = [description containsString:@"shorts_video_cell"] || [description containsString:@"shorts_shelf"];
-                if (hasShorts) *stop2 = YES;
-                return hasShorts;
-            }];
-            return removeItemsArrayIndexes.count > 0;
+static BOOL sectionIsShorts(id section) {
+    if (objc_getAssociatedObject(section, kShortsKeepKey)) return NO;
+
+    static Class shelfClass, itemSectionClass;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        shelfClass = %c(YTIShelfRenderer);
+        itemSectionClass = %c(YTIItemSectionRenderer);
+    });
+
+    BOOL shorts = NO;
+    if ([section isKindOfClass:shelfClass]) {
+        NSArray *items = ((YTIShelfRenderer *)section).content.horizontalListRenderer.itemsArray;
+        for (YTIHorizontalListSupportedRenderers *item in items) {
+            NSString *d = [item.elementRenderer description];
+            if ([d containsString:@"shorts_shelf"] || [d containsString:@"shorts_video_cell"]) {
+                shorts = YES;
+                break;
+            }
         }
-        if ([sectionRenderer isKindOfClass:%c(YTIItemSectionRenderer)]) {
-            NSString *description = [sectionRenderer description];
-            if ([description containsString:@"shorts_shelf.eml"] || [description containsString:@"shorts_shelf"])
-                return YES;
-            NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = sectionRenderer.contentsArray;
+    } else if ([section isKindOfClass:itemSectionClass]) {
+        NSString *d = [section description];
+        if ([d containsString:@"shorts_shelf"] || [d containsString:@"shorts_video_cell"]) {
+            shorts = YES;
+        } else {
+            NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = ((YTIItemSectionRenderer *)section).contentsArray;
             for (YTIItemSectionSupportedRenderers *supported in contentsArray) {
                 NSString *elDesc = [supported.elementRenderer description];
                 if ([elDesc containsString:@"shorts_shelf"] || [elDesc containsString:@"shorts_video_cell"]) {
-                    return YES;
+                    shorts = YES;
+                    break;
                 }
             }
         }
-        return NO;
+    }
+
+    if (!shorts) {
+        objc_setAssociatedObject(section, kShortsKeepKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return shorts;
+}
+
+static NSIndexSet *shortsIndexes(NSArray *array) {
+    return [array indexesOfObjectsPassingTest:^BOOL(id s, NSUInteger i, BOOL *stop) {
+        return sectionIsShorts(s);
     }];
-    [newArray removeObjectsAtIndexes:removeIndexes];
-    return newArray;
 }
 
 %hook YTInnerTubeCollectionViewController
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
     if (shouldHideShorts()) {
-        NSMutableArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
-        if (sectionRenderers && [sectionRenderers isKindOfClass:[NSArray class]]) {
-            [self setValue:filteredShortsArray(sectionRenderers) forKey:@"_sectionRenderers"];
+        NSMutableArray *current = [self valueForKey:@"_sectionRenderers"];
+        if ([current isKindOfClass:[NSMutableArray class]]) {
+            NSIndexSet *remove = shortsIndexes(current);
+            if (remove.count) {
+                [current removeObjectsAtIndexes:remove];
+            }
         }
     }
     %orig;
 }
 
 - (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
-    if (shouldHideShorts() && array) {
-        %orig(filteredShortsArray(array));
-    } else {
-        %orig;
+    if (array.count && shouldHideShorts()) {
+        NSIndexSet *remove = shortsIndexes(array);
+        if (remove.count) {
+            NSMutableArray *filtered = [array mutableCopy];
+            [filtered removeObjectsAtIndexes:remove];
+            %orig(filtered);
+            return;
+        }
     }
+    %orig;
 }
 %end
 
