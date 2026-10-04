@@ -14,6 +14,7 @@
 - (NSMutableArray *)adSlotsArray {
     return [NSMutableArray array];
 }
+- (BOOL)isMonetized { return NO; }
 %end
 
 %hook YTIClientMdxGlobalConfig
@@ -80,6 +81,7 @@
 - (NSMutableArray *)adSlotsArray {
     return [NSMutableArray array];
 }
+- (BOOL)isMonetized { return NO; }
 %end
 %hook YTIClientMdxGlobalConfig
 %new(B@:)
@@ -196,36 +198,61 @@ static BOOL isAdRenderer(YTIElementRenderer *elementRenderer, int kind) {
     }
     return NO;
 }
-static NSMutableArray <YTIItemSectionRenderer *> *filteredArray(NSArray <YTIItemSectionRenderer *> *array) {
-    NSMutableArray <YTIItemSectionRenderer *> *newArray = [array mutableCopy];
-    NSIndexSet *removeIndexes = [newArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionRenderer *sectionRenderer, NSUInteger idx, BOOL *stop) {
-        if ([sectionRenderer isKindOfClass:%c(YTIShelfRenderer)]) {
-            YTIShelfSupportedRenderers *content = ((YTIShelfRenderer *)sectionRenderer).content;
-            YTIHorizontalListRenderer *horizontalListRenderer = content.horizontalListRenderer;
-            NSMutableArray <YTIHorizontalListSupportedRenderers *> *itemsArray = horizontalListRenderer.itemsArray;
-            NSIndexSet *removeItemsArrayIndexes = [itemsArray indexesOfObjectsPassingTest:^BOOL(YTIHorizontalListSupportedRenderers *horizontalListSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
-                YTIElementRenderer *elementRenderer = horizontalListSupportedRenderers.elementRenderer;
-                return isAdRenderer(elementRenderer, 4);
-            }];
+static const void *kAdCleanKey = &kAdCleanKey;
+
+static BOOL isAdSection(YTIItemSectionRenderer *sectionRenderer) {
+    if (objc_getAssociatedObject(sectionRenderer, kAdCleanKey)) return NO;
+
+    static Class shelfClass, itemSectionClass;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        shelfClass = %c(YTIShelfRenderer);
+        itemSectionClass = %c(YTIItemSectionRenderer);
+    });
+
+    if ([sectionRenderer isKindOfClass:shelfClass]) {
+        YTIShelfSupportedRenderers *content = ((YTIShelfRenderer *)sectionRenderer).content;
+        YTIHorizontalListRenderer *horizontalListRenderer = content.horizontalListRenderer;
+        NSMutableArray <YTIHorizontalListSupportedRenderers *> *itemsArray = horizontalListRenderer.itemsArray;
+        NSIndexSet *removeItemsArrayIndexes = [itemsArray indexesOfObjectsPassingTest:^BOOL(YTIHorizontalListSupportedRenderers *horizontalListSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
+            YTIElementRenderer *elementRenderer = horizontalListSupportedRenderers.elementRenderer;
+            return isAdRenderer(elementRenderer, 4);
+        }];
+        if (removeItemsArrayIndexes.count) {
             [itemsArray removeObjectsAtIndexes:removeItemsArrayIndexes];
         }
-        if (![sectionRenderer isKindOfClass:%c(YTIItemSectionRenderer)])
-            return NO;
-        NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = sectionRenderer.contentsArray;
-        if (contentsArray.count > 1) {
-            NSIndexSet *removeContentsArrayIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionSupportedRenderers *sectionSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
-                YTIElementRenderer *elementRenderer = sectionSupportedRenderers.elementRenderer;
-                return isAdRenderer(elementRenderer, 3);
-            }];
+    }
+
+    if (![sectionRenderer isKindOfClass:itemSectionClass]) {
+        objc_setAssociatedObject(sectionRenderer, kAdCleanKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return NO;
+    }
+
+    NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = sectionRenderer.contentsArray;
+    if (contentsArray.count > 1) {
+        NSIndexSet *removeContentsArrayIndexes = [contentsArray indexesOfObjectsPassingTest:^BOOL(YTIItemSectionSupportedRenderers *sectionSupportedRenderers, NSUInteger idx2, BOOL *stop2) {
+            YTIElementRenderer *elementRenderer = sectionSupportedRenderers.elementRenderer;
+            return isAdRenderer(elementRenderer, 3);
+        }];
+        if (removeContentsArrayIndexes.count) {
             [contentsArray removeObjectsAtIndexes:removeContentsArrayIndexes];
         }
-        YTIItemSectionSupportedRenderers *firstObject = [contentsArray firstObject];
-        YTIElementRenderer *elementRenderer = firstObject.elementRenderer;
-        return isAdRenderer(elementRenderer, 2);
-    }];
-    [newArray removeObjectsAtIndexes:removeIndexes];
-    return newArray;
+    }
+    YTIItemSectionSupportedRenderers *firstObject = [contentsArray firstObject];
+    YTIElementRenderer *elementRenderer = firstObject.elementRenderer;
+    BOOL isAd = isAdRenderer(elementRenderer, 2);
+    if (!isAd) {
+        objc_setAssociatedObject(sectionRenderer, kAdCleanKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return isAd;
 }
+
+static NSIndexSet *adIndexes(NSArray *array) {
+    return [array indexesOfObjectsPassingTest:^BOOL(id s, NSUInteger i, BOOL *stop) {
+        return isAdSection(s);
+    }];
+}
+
 %hook _ASDisplayView
 - (void)didMoveToWindow {
     %orig;
@@ -233,14 +260,30 @@ static NSMutableArray <YTIItemSectionRenderer *> *filteredArray(NSArray <YTIItem
         [self removeFromSuperview];
 }
 %end
+
 %hook YTInnerTubeCollectionViewController
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
     NSMutableArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
-    [self setValue:filteredArray(sectionRenderers) forKey:@"_sectionRenderers"];
+    if ([sectionRenderers isKindOfClass:[NSMutableArray class]]) {
+        NSIndexSet *remove = adIndexes(sectionRenderers);
+        if (remove.count) {
+            [sectionRenderers removeObjectsAtIndexes:remove];
+        }
+    }
     %orig;
 }
+
 - (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
-    %orig(filteredArray(array));
+    if (array.count) {
+        NSIndexSet *remove = adIndexes(array);
+        if (remove.count) {
+            NSMutableArray *filtered = [array mutableCopy];
+            [filtered removeObjectsAtIndexes:remove];
+            %orig(filtered);
+            return;
+        }
+    }
+    %orig;
 }
 %end
 %end
