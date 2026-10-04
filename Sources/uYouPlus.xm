@@ -992,11 +992,13 @@ static NSIndexSet *shortsIndexes(NSArray *array) {
 %hook YTInnerTubeCollectionViewController
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
     if (shouldHideShorts()) {
-        NSMutableArray *current = [self valueForKey:@"_sectionRenderers"];
-        if ([current isKindOfClass:[NSMutableArray class]]) {
+        NSArray *current = [self valueForKey:@"_sectionRenderers"];
+        if (current && [current isKindOfClass:[NSArray class]]) {
             NSIndexSet *remove = shortsIndexes(current);
             if (remove.count) {
-                [current removeObjectsAtIndexes:remove];
+                NSMutableArray *filtered = [current mutableCopy];
+                [filtered removeObjectsAtIndexes:remove];
+                [self setValue:filtered forKey:@"_sectionRenderers"];
             }
         }
     }

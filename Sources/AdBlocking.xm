@@ -238,6 +238,9 @@ static BOOL isAdSection(YTIItemSectionRenderer *sectionRenderer) {
             [contentsArray removeObjectsAtIndexes:removeContentsArrayIndexes];
         }
     }
+    if (contentsArray.count == 0) {
+        return NO;
+    }
     YTIItemSectionSupportedRenderers *firstObject = [contentsArray firstObject];
     YTIElementRenderer *elementRenderer = firstObject.elementRenderer;
     BOOL isAd = isAdRenderer(elementRenderer, 2);
@@ -263,11 +266,13 @@ static NSIndexSet *adIndexes(NSArray *array) {
 
 %hook YTInnerTubeCollectionViewController
 - (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
-    NSMutableArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
-    if ([sectionRenderers isKindOfClass:[NSMutableArray class]]) {
+    NSArray *sectionRenderers = [self valueForKey:@"_sectionRenderers"];
+    if (sectionRenderers && [sectionRenderers isKindOfClass:[NSArray class]]) {
         NSIndexSet *remove = adIndexes(sectionRenderers);
         if (remove.count) {
-            [sectionRenderers removeObjectsAtIndexes:remove];
+            NSMutableArray *filtered = [sectionRenderers mutableCopy];
+            [filtered removeObjectsAtIndexes:remove];
+            [self setValue:filtered forKey:@"_sectionRenderers"];
         }
     }
     %orig;
