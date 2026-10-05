@@ -957,21 +957,36 @@ static BOOL sectionIsTopicsShelf(id section) {
         NSArray *items = ((YTIShelfRenderer *)section).content.horizontalListRenderer.itemsArray;
         for (YTIHorizontalListSupportedRenderers *item in items) {
             NSString *d = [item.elementRenderer description];
-            if ([d containsString:@"topic_chip"] || [d containsString:@"explore_more_topics"]) {
+            if (d && ([d containsString:@"Explore more topics"] || [d containsString:@"topic_chip"] ||
+                      [d containsString:@"chip_cloud"] || [d containsString:@"expandable_bar"])) {
                 topics = YES;
                 break;
             }
         }
-    } else if ([section isKindOfClass:itemSectionClass]) {
-        // Only inspect the section's own element renderers, never the full section dump
-        NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = ((YTIItemSectionRenderer *)section).contentsArray;
-        for (YTIItemSectionSupportedRenderers *supported in contentsArray) {
-            YTIElementRenderer *er = supported.elementRenderer;
-            if (!er) continue;
-            NSString *d = [er description];
-            if ([d containsString:@"topic_chip"] || [d containsString:@"explore_more_topics"]) {
+        // Container-level: shelf_header carrying the title, per Claude review #1
+        if (!topics) {
+            NSString *sd = [((YTIShelfRenderer *)section) description];
+            if ([sd containsString:@"shelf_header.eml"] && ([sd containsString:@"Explore more topics"] || [sd containsString:@"topic_chip"])) {
                 topics = YES;
-                break;
+            }
+        }
+    } else if ([section isKindOfClass:itemSectionClass]) {
+        // Section-level: full section description includes header title text
+        NSString *sd = [section description];
+        if ([sd containsString:@"Explore more topics"] ||
+            ([sd containsString:@"horizontal_shelf.eml"] && [sd containsString:@"chip_cloud"])) {
+            topics = YES;
+        } else {
+            NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = ((YTIItemSectionRenderer *)section).contentsArray;
+            for (YTIItemSectionSupportedRenderers *supported in contentsArray) {
+                YTIElementRenderer *er = supported.elementRenderer;
+                if (!er) continue;
+                NSString *d = [er description];
+                if (d && ([d containsString:@"Explore more topics"] || [d containsString:@"topic_chip"] ||
+                          [d containsString:@"chip_cloud"] || [d containsString:@"expandable_bar"])) {
+                    topics = YES;
+                    break;
+                }
             }
         }
     }
