@@ -941,6 +941,10 @@ static BOOL shouldHideTopics(void) {
     return IS_ENABLED(kHideExploreTopics);
 }
 
+@interface UIView (TopicShelfHelpers)
+- (void)uyou_enumerateSubviewsOfDepth:(NSUInteger)maxDepth usingBlock:(void (^)(__kindof UIView *, NSUInteger, BOOL *))block;
+@end
+
 static BOOL sectionIsTopicsShelf(id section) {
     if (objc_getAssociatedObject(section, kTopicsKeepKey)) return NO;
 
@@ -953,46 +957,27 @@ static BOOL sectionIsTopicsShelf(id section) {
 
     BOOL topics = NO;
     if ([section isKindOfClass:shelfClass]) {
-        // Cheap pass first: check item descriptions only for the shelf card set
-        NSArray *items = ((YTIShelfRenderer *)section).content.horizontalListRenderer.itemsArray;
-        for (YTIHorizontalListSupportedRenderers *item in items) {
-            NSString *d = [item.elementRenderer description];
-            if (d && ([d containsString:@"Explore more topics"] || [d containsString:@"topic_chip"] ||
-                      [d containsString:@"chip_cloud"] || [d containsString:@"expandable_bar"])) {
-                topics = YES;
-                break;
-            }
-        }
-        // Container-level: shelf_header carrying the title, per Claude review #1
-        if (!topics) {
-            NSString *sd = [((YTIShelfRenderer *)section) description];
-            if ([sd containsString:@"shelf_header.eml"] && ([sd containsString:@"Explore more topics"] || [sd containsString:@"topic_chip"])) {
-                topics = YES;
-            }
+        // Container-level: shelf_header carrying the title (case-insensitive)
+        NSString *sd = [((YTIShelfRenderer *)section) description];
+        if ([sd containsString:@"shelf_header.eml"] &&
+            ([sd localizedCaseInsensitiveContainsString:@"Explore more topics"] || [sd containsString:@"topic_chip"])) {
+            topics = YES;
         }
     } else if ([section isKindOfClass:itemSectionClass]) {
-        // Section-level: full section description includes header title text
+        // Section-level: full section description includes nested header title text
         NSString *sd = [section description];
-        if ([sd containsString:@"Explore more topics"] ||
+        if ([sd localizedCaseInsensitiveContainsString:@"Explore more topics"] ||
             ([sd containsString:@"horizontal_shelf.eml"] && [sd containsString:@"chip_cloud"])) {
             topics = YES;
-        } else {
-            NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = ((YTIItemSectionRenderer *)section).contentsArray;
-            for (YTIItemSectionSupportedRenderers *supported in contentsArray) {
-                YTIElementRenderer *er = supported.elementRenderer;
-                if (!er) continue;
-                NSString *d = [er description];
-                if (d && ([d containsString:@"Explore more topics"] || [d containsString:@"topic_chip"] ||
-                          [d containsString:@"chip_cloud"] || [d containsString:@"expandable_bar"])) {
-                    topics = YES;
-                    break;
-                }
-            }
         }
     }
 
     if (!topics) {
-        objc_setAssociatedObject(section, kTopicsKeepKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        // Cache only shelf-class sections (static content); item sections can be
+        // refilled in place later, so leave them uncached per review.
+        if ([section isKindOfClass:shelfClass]) {
+            objc_setAssociatedObject(section, kTopicsKeepKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
     }
     return topics;
 }
@@ -1117,6 +1102,39 @@ static NSIndexSet *shortsIndexes(NSArray *array) {
 %hook _ASDisplayView
 - (void)didMoveToWindow {
     %orig;
+// Hide "Explore more topics" shelf - view-layer fallback (title is rendered text, always reachable here)
+    if (IS_ENABLED(kHideExploreTopics)) {
+        NSString *iden = self.accessibilityIdentifier;
+        if ([iden isKindOfClass:[NSString class]] && [iden containsString:@"shelf_header.eml"]) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *text = self.accessibilityLabel;
+                if (![text isKindOfClass:[NSString class]] || !text.length) text = self.accessibilityValue;
+                if (![text isKindOfClass:[NSString class]] || !text.length) {
+                    __block NSString *found = nil;
+                    [self uyou_enumerateSubviewsOfDepth:4 usingBlock:^(__kindof UIView *v, NSUInteger depth, BOOL *stop) {
+                        NSString *l = v.accessibilityLabel;
+                        if ([l isKindOfClass:[NSString class]] && [l localizedCaseInsensitiveContainsString:@"Explore more topics"]) {
+                            found = l;
+                            *stop = YES;
+                        }
+                    }];
+                    text = found;
+                }
+                if ([text isKindOfClass:[NSString class]] && [text localizedCaseInsensitiveContainsString:@"Explore more topics"]) {
+                    // Walk up to the enclosing collection cell and hide the whole shelf, not just the header
+                    UIView *cell = self;
+                    while (cell && ![cell isKindOfClass:%c(_ASCollectionViewCell)] && ![cell isKindOfClass:%c(UICollectionViewCell)]) {
+                        cell = cell.superview;
+                    }
+                    if (cell) {
+                        cell.hidden = YES;
+                    } else {
+                        self.superview.hidden = YES;
+                    }
+                }
+            });
+        }
+    }
     if ((IS_ENABLED(kHideBuySuperThanks)) && ([self.accessibilityIdentifier isEqualToString:@"id.elements.components.suggested_action"])) { 
         self.hidden = YES; 
     }
@@ -1534,6 +1552,29 @@ static NSIndexSet *shortsIndexes(NSArray *array) {
 }
 %end
 %end
+
+@implementation UIView (TopicShelfHelpers)
+- (void)uyou_enumerateSubviewsOfDepth:(NSUInteger)maxDepth usingBlock:(void (^)(__kindof UIView *, NSUInteger, BOOL *))block {
+    if (!block) return;
+    NSMutableArray *queue = @[[self]].mutableCopy;
+    NSMutableArray *depths = @[@0].mutableCopy;
+    while (queue.count) {
+        UIView *v = queue.firstObject;
+        NSUInteger d = depths.firstObject.integerValue;
+        [queue removeObjectAtIndex:0];
+        [depths removeObjectAtIndex:0];
+        BOOL stop = NO;
+        block(v, d, &stop);
+        if (stop) return;
+        if (d < maxDepth) {
+            for (UIView *s in v.subviews) {
+                [queue addObject:s];
+                [depths addObject:@(d + 1)];
+            }
+        }
+    }
+}
+@end
 
 # pragma mark - ctor
 %ctor {
