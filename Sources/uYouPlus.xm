@@ -957,7 +957,7 @@ static BOOL sectionIsTopicsShelf(id section) {
         NSArray *items = ((YTIShelfRenderer *)section).content.horizontalListRenderer.itemsArray;
         for (YTIHorizontalListSupportedRenderers *item in items) {
             NSString *d = [item.elementRenderer description];
-            if ([d containsString:@"topic_chip"] || [d containsString:@"FEexplore"]) {
+            if ([d containsString:@"topic_chip"] || [d containsString:@"explore_more_topics"]) {
                 topics = YES;
                 break;
             }
@@ -969,7 +969,7 @@ static BOOL sectionIsTopicsShelf(id section) {
             YTIElementRenderer *er = supported.elementRenderer;
             if (!er) continue;
             NSString *d = [er description];
-            if ([d containsString:@"topic_chip"] || [d containsString:@"FEexplore"] || [d containsString:@"explore_more_topics"]) {
+            if ([d containsString:@"topic_chip"] || [d containsString:@"explore_more_topics"]) {
                 topics = YES;
                 break;
             }
