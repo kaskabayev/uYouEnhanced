@@ -121,6 +121,7 @@ static NSString *const kHideVideosInFullscreen = @"hideVideosInFullscreen_enable
 static NSString *const kHideRelatedWatchNexts = @"hideRelatedWatchNexts_enabled";
 // Shorts control overlay
 static NSString *const kHideShortsInFeeds = @"hideShortsInFeeds_enabled";
+static NSString *const kHideExploreTopics = @"hideExploreTopics_enabled";
 static NSString *const kHideBuySuperThanks = @"hideBuySuperThanks_enabled";
 static NSString *const kHideSubscriptions = @"hideSubscriptions_enabled";
 static NSString *const kShortsQualityPicker = @"shortsQualityPicker_enabled";

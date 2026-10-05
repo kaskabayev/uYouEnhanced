@@ -934,6 +934,90 @@ YTMainAppControlsOverlayView *controlsOverlayView;
 - (BOOL)enablePlayerBarForVerticalVideoWhenControlsHiddenInFullscreen { return YES; }
 %end
 
+// Hide "Explore more topics" / rich section cards - Zero-Lag Filter
+static const void *kTopicsKeepKey = &kTopicsKeepKey;
+
+static BOOL shouldHideTopics(void) {
+    return IS_ENABLED(kHideExploreTopics);
+}
+
+static BOOL sectionIsTopicsShelf(id section) {
+    if (objc_getAssociatedObject(section, kTopicsKeepKey)) return NO;
+
+    static Class shelfClass, itemSectionClass;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        shelfClass = %c(YTIShelfRenderer);
+        itemSectionClass = %c(YTIItemSectionRenderer);
+    });
+
+    BOOL topics = NO;
+    if ([section isKindOfClass:shelfClass]) {
+        // Cheap pass first: check item descriptions only for the shelf card set
+        NSArray *items = ((YTIShelfRenderer *)section).content.horizontalListRenderer.itemsArray;
+        for (YTIHorizontalListSupportedRenderers *item in items) {
+            NSString *d = [item.elementRenderer description];
+            if ([d containsString:@"topic_chip"] || [d containsString:@"FEexplore"]) {
+                topics = YES;
+                break;
+            }
+        }
+    } else if ([section isKindOfClass:itemSectionClass]) {
+        // Only inspect the section's own element renderers, never the full section dump
+        NSMutableArray <YTIItemSectionSupportedRenderers *> *contentsArray = ((YTIItemSectionRenderer *)section).contentsArray;
+        for (YTIItemSectionSupportedRenderers *supported in contentsArray) {
+            YTIElementRenderer *er = supported.elementRenderer;
+            if (!er) continue;
+            NSString *d = [er description];
+            if ([d containsString:@"topic_chip"] || [d containsString:@"FEexplore"] || [d containsString:@"explore_more_topics"]) {
+                topics = YES;
+                break;
+            }
+        }
+    }
+
+    if (!topics) {
+        objc_setAssociatedObject(section, kTopicsKeepKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return topics;
+}
+
+static NSIndexSet *topicsIndexes(NSArray *array) {
+    return [array indexesOfObjectsPassingTest:^BOOL(id s, NSUInteger i, BOOL *stop) {
+        return sectionIsTopicsShelf(s);
+    }];
+}
+
+%hook YTInnerTubeCollectionViewController
+- (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
+    if (shouldHideTopics()) {
+        NSArray *current = [self valueForKey:@"_sectionRenderers"];
+        if (current && [current isKindOfClass:[NSArray class]]) {
+            NSIndexSet *remove = topicsIndexes(current);
+            if (remove.count) {
+                NSMutableArray *filtered = [current mutableCopy];
+                [filtered removeObjectsAtIndexes:remove];
+                [self setValue:filtered forKey:@"_sectionRenderers"];
+            }
+        }
+    }
+    %orig;
+}
+
+- (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
+    if (shouldHideTopics() && array.count) {
+        NSIndexSet *remove = topicsIndexes(array);
+        if (remove.count) {
+            NSMutableArray *filtered = [array mutableCopy];
+            [filtered removeObjectsAtIndexes:remove];
+            %orig(filtered);
+            return;
+        }
+    }
+    %orig;
+}
+%end
+
 // Hide Shorts Cells - Optimized Zero-Lag Filter
 static const void *kShortsKeepKey = &kShortsKeepKey;
 
