@@ -259,6 +259,9 @@ static NSIndexSet *adIndexes(NSArray *array) {
 %hook _ASDisplayView
 - (void)didMoveToWindow {
     %orig;
+    if (IS_ENABLED(kHideExploreTopics) && [self.accessibilityIdentifier containsString:@"rich_section"]) {
+        [self removeFromSuperview];
+    }
     if (([self.accessibilityIdentifier isEqualToString:@"eml.expandable_metadata.vpp"]))
         [self removeFromSuperview];
 }
