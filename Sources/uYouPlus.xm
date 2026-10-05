@@ -988,36 +988,6 @@ static NSIndexSet *topicsIndexes(NSArray *array) {
     }];
 }
 
-%hook YTInnerTubeCollectionViewController
-- (void)displaySectionsWithReloadingSectionControllerByRenderer:(id)renderer {
-    if (shouldHideTopics()) {
-        NSArray *current = [self valueForKey:@"_sectionRenderers"];
-        if (current && [current isKindOfClass:[NSArray class]]) {
-            NSIndexSet *remove = topicsIndexes(current);
-            if (remove.count) {
-                NSMutableArray *filtered = [current mutableCopy];
-                [filtered removeObjectsAtIndexes:remove];
-                [self setValue:filtered forKey:@"_sectionRenderers"];
-            }
-        }
-    }
-    %orig;
-}
-
-- (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
-    if (shouldHideTopics() && array.count) {
-        NSIndexSet *remove = topicsIndexes(array);
-        if (remove.count) {
-            NSMutableArray *filtered = [array mutableCopy];
-            [filtered removeObjectsAtIndexes:remove];
-            %orig(filtered);
-            return;
-        }
-    }
-    %orig;
-}
-%end
-
 // Hide Shorts Cells - Optimized Zero-Lag Filter
 static const void *kShortsKeepKey = &kShortsKeepKey;
 
@@ -1086,16 +1056,41 @@ static NSIndexSet *shortsIndexes(NSArray *array) {
             }
         }
     }
+    if (shouldHideTopics()) {
+        NSArray *current = [self valueForKey:@"_sectionRenderers"];
+        if (current && [current isKindOfClass:[NSArray class]]) {
+            NSIndexSet *remove = topicsIndexes(current);
+            if (remove.count) {
+                NSMutableArray *filtered = [current mutableCopy];
+                [filtered removeObjectsAtIndexes:remove];
+                [self setValue:filtered forKey:@"_sectionRenderers"];
+            }
+        }
+    }
     %orig;
 }
 
 - (void)addSectionsFromArray:(NSArray <YTIItemSectionRenderer *> *)array {
-    if (array.count && shouldHideShorts()) {
-        NSIndexSet *remove = shortsIndexes(array);
-        if (remove.count) {
-            NSMutableArray *filtered = [array mutableCopy];
-            [filtered removeObjectsAtIndexes:remove];
-            %orig(filtered);
+    if (array.count && (shouldHideShorts() || shouldHideTopics())) {
+        NSArray *working = array;
+        if (shouldHideTopics()) {
+            NSIndexSet *topicRemove = topicsIndexes(working);
+            if (topicRemove.count) {
+                NSMutableArray *tmp = [working mutableCopy];
+                [tmp removeObjectsAtIndexes:topicRemove];
+                working = tmp;
+            }
+        }
+        if (shouldHideShorts()) {
+            NSIndexSet *shortsRemove = shortsIndexes(working);
+            if (shortsRemove.count) {
+                NSMutableArray *tmp = [working mutableCopy];
+                [tmp removeObjectsAtIndexes:shortsRemove];
+                working = tmp;
+            }
+        }
+        if (working != array) {
+            %orig(working);
             return;
         }
     }
