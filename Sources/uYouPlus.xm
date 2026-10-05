@@ -1556,11 +1556,11 @@ static NSIndexSet *shortsIndexes(NSArray *array) {
 @implementation UIView (TopicShelfHelpers)
 - (void)uyou_enumerateSubviewsOfDepth:(NSUInteger)maxDepth usingBlock:(void (^)(__kindof UIView *, NSUInteger, BOOL *))block {
     if (!block) return;
-    NSMutableArray *queue = @[[self]].mutableCopy;
-    NSMutableArray *depths = @[@0].mutableCopy;
-    while (queue.count) {
-        UIView *v = queue.firstObject;
-        NSUInteger d = depths.firstObject.integerValue;
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:self];
+    NSMutableArray<NSNumber *> *depths = [NSMutableArray arrayWithObject:@0];
+    while (queue.count > 0) {
+        UIView *v = [queue firstObject];
+        NSUInteger d = [depths firstObject].unsignedIntegerValue;
         [queue removeObjectAtIndex:0];
         [depths removeObjectAtIndex:0];
         BOOL stop = NO;
