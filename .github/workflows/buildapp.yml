@@ -69,7 +69,7 @@ concurrency:
 jobs:
   build:
     name: Build uYouEnhanced
-    runs-on: macos-latest
+    runs-on: macos-15
     permissions:
       contents: write
 
